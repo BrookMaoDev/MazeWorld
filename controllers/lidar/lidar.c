@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <math.h>
 
 #define TIME_STEP 32
 #define LEFT 0
@@ -45,8 +46,8 @@
 #define NUM_PARTICLES 5000     // NUmber of particles in the filter
 #define MAX_SPHERES 300        // Maximum number of spheres to display (reduce if too laggy)
 #define BD 7                   // Minimum image dist. between border and particles
-//#define __DEBUG 0    // Turn on/off the debug print statements
-                       // use step-by-step simulation for this!
+#define __DEBUG 0              // Turn on/off the debug print statements
+                               // use step-by-step simulation for this!
 
 unsigned char *read_PPM_map(int *sx, int *sy, char *name)
 {
@@ -173,10 +174,40 @@ float particle_fitness(float *parts, int i, float *gt, const float *lid, int gt_
   //        whose magnitude gets larger as the number gets smaller.
 
   // TO DO: Implement this function to compute and return the belief
-  //        value (fitness value) for a particle. 
-  
- return 1.0;         // Return the likelihood
-  
+  //        value (fitness value) for a particle.
+
+  // printf("gt_samples: %d\n", gt_samples); // 64
+  // printf("lid_samples: %d\n", lid_samples); // 32
+
+  const float LOG_SPACE_NORMALIZING_CONSTANT = logf(sqrtf(2 * PI * powf(noise, 2)));
+  float cap = 3.08; // gt's max distance, computed via fsize / 2.5
+  int best_offset = -1;
+  float best_likelihood = 0;
+
+  for (int offset = 0; offset < gt_samples; offset++)
+  {
+    float err_sum = 0;
+
+    for (int j = 0; j < lid_samples; j++)
+    {
+      float x = gt[(j + offset) % gt_samples];
+      float µ = lid[j];
+      if (isinf(µ) || µ > cap)
+        µ = cap;
+
+      float p_err = -powf(x - µ, 2) / (2 * powf(noise, 2)) - LOG_SPACE_NORMALIZING_CONSTANT;
+      err_sum += p_err;
+    }
+
+    if (best_offset == -1 || err_sum > best_likelihood)
+    {
+      best_offset = offset;
+      best_likelihood = err_sum;
+    }
+  }
+
+  parts[i * 3 + 2] = ((float)best_offset / gt_samples) * 2 * PI; // Angle relative to right when best_likelihood occurs
+  return expf(best_likelihood / lid_samples);
 }
 
 //// YOU DO NOT NEED TO MODIFY ANY CODE BELOW THIS POINT - but you are encouraged
